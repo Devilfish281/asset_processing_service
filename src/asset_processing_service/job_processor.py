@@ -152,14 +152,15 @@ async def process_job(job: AssetProcessingJob, graphs: dict) -> None:
         What would you like to do?
         """
 
-        # Update job status to completed
+        last_msg_type = getattr(last_msg, "type", None)
 
+        # Update job status to completed
         await update_job_details(
             job.id,
             {
                 "status": "completed",
                 "errorMessage": None,
-                "last_msg_type": "Ai",
+                "last_msg_type": last_msg_type,  # last_msg.type
                 "last_msg_content": ai_text,
             },
         )

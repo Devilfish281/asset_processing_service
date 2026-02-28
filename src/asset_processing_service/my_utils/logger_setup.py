@@ -20,11 +20,14 @@ import threading
 from contextlib import contextmanager
 from logging.handlers import RotatingFileHandler
 
-from asset_processing_service.my_utils.env_loader import load_dotenv_once  # Added Code
+from asset_processing_service.my_utils.env_loader import load_dotenv_once
 
 # Load environment variables from .env file if it exists
 
-load_dotenv_once()
+try:
+    load_dotenv_once()
+except Exception:
+    pass
 
 
 # from aiofiles import open as aio_open  # This import can be removed if not used
@@ -274,11 +277,18 @@ class AsyncRotatingFileHandler(RotatingFileHandler):
         """
         self._debug("function emit")  # Debug statement
         try:
-            # Format the record object into a string (msg) using the formatter associated with the handler.
-            msg = self.format(record)
-            # Add the formatted log message to the queue without blocking.
-            self.queue.put_nowait(msg)
-            self._debug(f"Enqueued log message: {msg}")  # Debug statement
+            if self._stop_event.is_set():
+                return
+            # # Format the record object into a string (msg) using the formatter associated with the handler.
+            # msg = self.format(record)
+            # # Add the formatted log message to the queue without blocking.
+            # self.queue.put_nowait(msg)
+            # self._debug(f"Enqueued log message: {msg}")  # Debug statement
+
+            # Enqueue the LogRecord, not the formatted string
+            self.queue.put_nowait(record)
+            self._debug(f"Enqueued LogRecord: {record.getMessage()}")
+
         except Exception as e:
             self._debug(f"Error in emit: {e}")
             self.handleError(record)
@@ -301,10 +311,14 @@ class AsyncRotatingFileHandler(RotatingFileHandler):
             try:
                 # Retrieves a message from the queue.
                 # If the queue is empty, a queue.Empty exception is raised, which is caught to prevent the thread from exiting.
-                msg = self.queue.get(timeout=0.1)
+                record = self.queue.get(timeout=0.1)
+                if record is None:
+                    continue
                 # Adds the dequeued message to the buffer.
-                buffer.append(msg)
-                self._debug(f"\nDequeued log message: \n{msg}")  # Debug statement
+                buffer.append(record)
+                self._debug(
+                    f"\nDequeued log message: \n{record.getMessage()}"
+                )  # Debug statement
 
                 ############################
                 # Batch Processing
@@ -323,7 +337,9 @@ class AsyncRotatingFileHandler(RotatingFileHandler):
                     self._write_buffer(buffer)
                     buffer.clear()
             except Exception as e:
+                # can't call handleError without a record here; just keep looping
                 self._debug(f"Error in _process_queue: {e}")
+                pass
 
         # while loop ends when the stop event is set and the queue is empty
         # Write any remaining messages
@@ -333,43 +349,61 @@ class AsyncRotatingFileHandler(RotatingFileHandler):
             self._write_buffer(buffer)
         self._debug("Background thread exiting")
 
+        # def _write_buffer(self, buffer):
+        #     """
+        #     Write a batch of log messages to the file.
+
+        #     :param buffer: List of log messages to write.
+        #     :type buffer: list
+        #     """
+
+        #     """
+        #     Messages are collected into a buffer by the _process_queue method.
+        #     When the buffer reaches a predefined size (buffer_size), the _write_buffer method is called.
+        #     The method writes all buffered messages to the log file in one operation.
+        #     Any errors during the writing process are handled gracefully, ensuring system stability.
+
+        #     Write a batch of log messages to the file.
+        #     Writes a batch of messages to the file. Called by the background thread to write buffered messages.
+        #     """
+        #     self._debug("function _write_buffer")  # Debug statement
+        #     self._debug("Writing buffer to file.")  # Debug statement
+        #     try:
+        #         # Joins all messages in the buffer into a single string, separated by newlines.
+        #         # Each log message in the buffer becomes a separate line in the log file.
+        #         # Ensures there is an additional newline at the end of the final log message.
+        #         joined_messages = "\n".join(buffer) + "\n"
+        #         # Writes the joined string of log messages to the log file (file stream).
+        #         # The self.stream is managed by the parent RotatingFileHandler class and represents the open log file.
+        #         self.stream.write(joined_messages)
+        #         # Flushes the file stream to ensure that the messages are written to the file immediately.
+        #         self.flush()
+        #         # Debug statement to confirm the number of messages written to the file.
+        #         self._debug(f"Wrote {len(buffer)} messages to file.")
+        #         for msg in buffer:
+        #             self._debug(f"  {msg}")  # Print each message written
+        #     except Exception as e:
+        #         self._debug(f"Error writing buffer to file: {e}")
+        #         for msg in buffer:
+        #             self.handleError(msg)
+
     def _write_buffer(self, buffer):
-        """
-        Write a batch of log messages to the file.
-
-        :param buffer: List of log messages to write.
-        :type buffer: list
-        """
-
-        """
-        Messages are collected into a buffer by the _process_queue method.
-        When the buffer reaches a predefined size (buffer_size), the _write_buffer method is called.
-        The method writes all buffered messages to the log file in one operation.
-        Any errors during the writing process are handled gracefully, ensuring system stability.
-
-        Write a batch of log messages to the file.
-        Writes a batch of messages to the file. Called by the background thread to write buffered messages.
-        """
-        self._debug("function _write_buffer")  # Debug statement
-        self._debug("Writing buffer to file.")  # Debug statement
         try:
-            # Joins all messages in the buffer into a single string, separated by newlines.
-            # Each log message in the buffer becomes a separate line in the log file.
-            # Ensures there is an additional newline at the end of the final log message.
-            joined_messages = "\n".join(buffer) + "\n"
-            # Writes the joined string of log messages to the log file (file stream).
-            # The self.stream is managed by the parent RotatingFileHandler class and represents the open log file.
-            self.stream.write(joined_messages)
-            # Flushes the file stream to ensure that the messages are written to the file immediately.
-            self.flush()
-            # Debug statement to confirm the number of messages written to the file.
-            self._debug(f"Wrote {len(buffer)} messages to file.")
-            for msg in buffer:
-                self._debug(f"  {msg}")  # Print each message written
-        except Exception as e:
-            self._debug(f"Error writing buffer to file: {e}")
-            for msg in buffer:
-                self.handleError(msg)
+            with self._lock:
+                for record in buffer:
+                    # rotation check (this is what you were missing)
+                    if self.shouldRollover(record):
+                        self.doRollover()
+
+                    msg = self.format(record)
+                    self.stream.write(msg + "\n")
+
+                self.flush()
+
+        except Exception:
+            # handleError expects a LogRecord
+            for record in buffer:
+                self.handleError(record)
 
     def close(self):
         """
@@ -400,29 +434,39 @@ class AsyncRotatingFileHandler(RotatingFileHandler):
             if not self._closed:
                 self._closed = True
                 self._debug("Closing AsyncRotatingFileHandler")  # Debug statement
+
                 # Signals the background thread to stop using self._stop_event.
                 self._stop_event.set()  # Signal the thread to stop
+
+                try:
+                    self.queue.put_nowait(None)
+                except Exception:
+                    pass
+
                 # Waits for the background thread to complete its work and exit gracefully.
-                self.worker.join()  # Wait for the thread to finish
+                self.worker.join(timeout=2.0)  # Wait for the thread to finish
+
+                if self.worker.is_alive():
+                    self._debug(
+                        "Worker still alive; skipping stream close to avoid closed-file writes"
+                    )
+                    return
 
                 ########################################
                 # Process Remaining Messages
                 ########################################
-                # Process any remaining messages in the queue
-                if not self.queue.empty():
-                    self._debug(
-                        "Writing remaining messages before closing"
-                    )  # Debug statement
-                    buffer = []
-                    while not self.queue.empty():
-                        try:
-                            msg = self.queue.get_nowait()
-                            buffer.append(msg)
-                        except queue.Empty:
-                            break
-                    # Writes them to the log file using _write_buffer.
-                    if buffer:
-                        self._write_buffer(buffer)
+                buffer = []
+                while True:
+                    try:
+                        item = self.queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    if item is None:
+                        continue
+                    buffer.append(item)
+
+                if buffer:
+                    self._write_buffer(buffer)
 
                 # Calls the close method of the parent class to release resources.
                 super().close()  # Call the base class close method
@@ -463,13 +507,17 @@ def setup_logger(logger_name=None, config_file=None, debug_messages=False):
 
     # Retrieve log directory and file name from environment variables
     # log_dir: The directory where log files are stored, defaulting to a subdirectory var/logs if not specified.
-    log_dir = os.getenv("LOG_DIR", os.path.join(config["log_dir"], "var/logs"))
+    log_dir = os.getenv("LOG_DIR")
+    log_dir = (log_dir or "").strip()
+    if not log_dir:
+        log_dir = os.path.join(config["log_dir"], "var", "logs")  # Changed Code
 
     # log_file_name: The name of the log file, defaulting to reportlog.log.
     log_file_name = os.getenv("LOG_FILE_NAME", "reportlog.log")
 
     # os.makedirs: Ensures the log directory exists; creates it if necessary.
     os.makedirs(log_dir, exist_ok=True)  # Ensure the directory exists
+
     # Combines log_dir and log_file_name into a full path for the log file.
     log_file = os.path.join(log_dir, log_file_name)
 
@@ -481,8 +529,19 @@ def setup_logger(logger_name=None, config_file=None, debug_messages=False):
     logger = logging.getLogger(logger_name or __name__)  # Reuse the global logger
 
     # Clear existing handlers to avoid duplicates
+    # if logger.hasHandlers():
+    #     logger.handlers.clear()  # Remove all existing handlers
+    #     _debug("Cleared existing handlers")  # Debug statement
+
+    # Clear existing handlers to avoid duplicates
     if logger.hasHandlers():
-        logger.handlers.clear()  # Remove all existing handlers
+        for handler in logger.handlers[:]:
+            try:
+                handler.close()
+            except Exception:
+                pass
+            logger.removeHandler(handler)
+        # logger.handlers.clear()
         _debug("Cleared existing handlers")  # Debug statement
 
     logger.setLevel(getattr(logging, config["log_level"], logging.INFO))
@@ -492,14 +551,19 @@ def setup_logger(logger_name=None, config_file=None, debug_messages=False):
     # Console Logging
     ############################S
     if config["enable_console"]:
+        # Ensure stdout is UTF-8 without relying on fileno() (safer in IDEs/redirects).
+        if hasattr(sys.stdout, "reconfigure"):
+            try:
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
         console_handler = logging.StreamHandler(sys.stdout)  # Changed Code
         console_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
         console_handler.setLevel(
             getattr(logging, config["log_level"], logging.INFO)
         )  # Changed Code
-        console_handler.stream = open(
-            console_handler.stream.fileno(), mode="w", encoding="utf-8", buffering=1
-        )
+
         logger.addHandler(console_handler)
         _debug(
             "Added StreamHandler for console logging with UTF-8 encoding"
@@ -534,9 +598,6 @@ def setup_logger(logger_name=None, config_file=None, debug_messages=False):
             )  # Debug statement
     # Returns the configured logger, ready for use.
     return logger
-
-
-from contextlib import contextmanager
 
 
 @contextmanager

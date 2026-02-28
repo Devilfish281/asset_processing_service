@@ -18,7 +18,10 @@ from asset_processing_service.my_utils.llm_loader import get_llm_or_init
 from asset_processing_service.my_utils.logger_setup import setup_logger
 from asset_processing_service.my_utils.token_usage import TokenUsage
 
-load_dotenv_once()
+try:  # added code
+    load_dotenv_once()  # added code
+except Exception:  # added code
+    pass  # added code
 
 # from dataclasses_json import config
 
@@ -172,6 +175,12 @@ class c_setup_config(BaseModel):
         default=env_bool("TESTING_FLAG", False),
         description="Flag to indicate if the application is running in testing mode.",
     )
+
+    testing_flag2: bool = Field(
+        default=env_bool("TESTING_FLAG2", False),
+        description="Flag to indicate if the application is running in testing mode level 2.",
+    )
+
     job_fetcher_run_number: int = Field(
         default=int(os.getenv("JOB_FETCHER_RUN_NUMBER", "3")),
         description="Counter for how many times the job fetcher has run.",
@@ -185,7 +194,7 @@ class c_setup_config(BaseModel):
 
     def get_logger(self) -> logging.Logger:
         if self.logger is None:
-            load_dotenv_once()
+
             # Avoid import-time failures: lazily create a logger the first time it's requested.
             self.logger = setup_logger(LOGGER_PROJECT_NAME)
             self.logger.info("logger Started!")
@@ -193,7 +202,7 @@ class c_setup_config(BaseModel):
 
     def get_llm(self) -> ChatOpenAI:
         """Return initialized LLM, initializing it once if needed."""
-        load_dotenv_once()
+
         return get_llm_or_init(
             self,
             temperature=0.0,
@@ -205,7 +214,7 @@ class c_setup_config(BaseModel):
 
     def get_tavily_client(self) -> TavilyClient:
         if self.tavily_client is None:
-            load_dotenv_once()
+
             api_key = os.getenv("TAVILY_API_KEY", "").strip()
             if not api_key:
                 raise ValueError("TAVILY_API_KEY is not set in environment variables.")
@@ -218,7 +227,7 @@ class c_setup_config(BaseModel):
 
     def get_tavily_async_client(self) -> AsyncTavilyClient:
         if self.tavily_async_client is None:
-            load_dotenv_once()
+
             api_key = os.getenv("TAVILY_API_KEY", "").strip()
             if not api_key:
                 raise ValueError("TAVILY_API_KEY is not set in environment variables.")
@@ -232,7 +241,7 @@ class c_setup_config(BaseModel):
         self.server_api_key = str(api_key).strip()
 
     def get_server_api_key(self) -> str:
-        load_dotenv_once()
+
         api_key = (self.server_api_key or "").strip()
         if not api_key:
             api_key = os.getenv("SERVER_API_KEY", "").strip()
@@ -256,7 +265,7 @@ class c_setup_config(BaseModel):
         self.redis_url = value
 
     def get_redis_url(self) -> str:
-        load_dotenv_once()
+
         value = (self.redis_url or "").strip()
         if not value:
             value = os.getenv("REDIS_URL", "").strip()
@@ -278,7 +287,6 @@ class c_setup_config(BaseModel):
         self.db_url = value
 
     def get_db_url(self) -> str:
-        load_dotenv_once()
 
         # 1) Use already-set field
         value = (self.db_url or "").strip()
@@ -321,7 +329,7 @@ class c_setup_config(BaseModel):
         self.db_url_fallback = value
 
     def get_db_url_fallback(self) -> str:
-        load_dotenv_once()
+
         value = (self.db_url_fallback or "").strip()
 
         if not value:
@@ -401,6 +409,7 @@ class c_setup_config(BaseModel):
             "c_setup_config("
             f"langsmith_flag={self.langsmith_flag!r}, "
             f"testing_flag={self.testing_flag!r}, "
+            f"testing_flag2={self.testing_flag2!r}, "
             f"agent_testing_flag={self.agent_testing_flag!r}, "
             f"view_graph_flag={self.view_graph_flag!r}, "
             f"save_pdf={self.save_pdf!r}, "
@@ -450,6 +459,7 @@ class c_setup_config(BaseModel):
             # Flags
             "langsmith_flag": self.langsmith_flag,
             "testing_flag": self.testing_flag,
+            "testing_flag2": self.testing_flag2,
             "agent_testing_flag": self.agent_testing_flag,
             "view_graph_flag": self.view_graph_flag,
             "save_pdf": self.save_pdf,

@@ -55,6 +55,7 @@ load_dotenv_once()
 setup_config = c_setup_config.get_instance()
 logger = setup_config.get_logger()
 
+
 _RUNTIME_INITIALIZED = False
 
 _INIT_LOCK = threading.Lock()
@@ -187,13 +188,13 @@ async def job_fetcher_run(
     job_queue: asyncio.Queue,
     jobs_pending_or_in_progress: set,
 ):
-    if setup_config.testing_flag:
+    if setup_config.testing_flag2:
         logger.info("job_fetcher_run is running in TESTING MODE ")
         job_fetcher_run_cnt = 0
 
     while True:
         try:
-            if setup_config.testing_flag:
+            if setup_config.testing_flag2:
                 job_fetcher_run_cnt += 1
                 logger.info(
                     f"job_fetcher_run count: {job_fetcher_run_cnt} / {setup_config.job_fetcher_run_number}"
@@ -287,7 +288,7 @@ async def worker_run(
     job_locks: dict,
     graphs: dict,
 ):
-    if setup_config.testing_flag:
+    if setup_config.testing_flag2:
         logger.info("worker_run is running in TESTING MODE returning early ")
         return
     while True:
@@ -323,6 +324,75 @@ async def worker_run(
         except Exception as e:
             logger.error(f"Error in worker {worker_id}: {e}")
             await asyncio.sleep(3)
+
+
+# --- Shutdown Debug Helpers (NEW) ---
+async def _shutdown_default_executor(logger: logging.Logger) -> None:
+    """Force shutdown of asyncio's default ThreadPoolExecutor to avoid hanging non-daemon threads."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    try:
+        await loop.shutdown_default_executor()
+        logger.info("Shutdown debug: default executor shutdown complete.")
+    except Exception as e:
+        logger.warning("Shutdown debug: default executor shutdown failed: %r", e)
+
+
+def _log_active_threads(logger: logging.Logger) -> None:
+    threads = threading.enumerate()
+    logger.warning("Shutdown debug: %d active thread(s):", len(threads))
+    for t in threads:
+        logger.warning(
+            "  thread name=%r ident=%s daemon=%s alive=%s",
+            t.name,
+            t.ident,
+            t.daemon,
+            t.is_alive(),
+        )
+
+
+async def _cancel_and_await_pending_tasks(
+    logger: logging.Logger,
+) -> None:
+    """Cancel pending tasks (except current) and await them so cleanup runs."""
+    try:
+        current = asyncio.current_task()
+        tasks = [t for t in asyncio.all_tasks() if t is not current]
+    except RuntimeError:
+        # No running loop in this context
+        return
+
+    if not tasks:
+        logger.info("Shutdown debug: no pending asyncio tasks.")
+        return
+
+    logger.warning("Shutdown debug: %d pending asyncio task(s):", len(tasks))
+    for t in tasks:
+        try:
+            coro = t.get_coro()
+            coro_name = getattr(coro, "__qualname__", repr(coro))
+        except Exception:
+            coro_name = "<unknown>"
+
+        logger.warning(
+            "  task=%r name=%r done=%s cancelled=%s coro=%s",
+            t,
+            t.get_name() if hasattr(t, "get_name") else None,
+            t.done(),
+            t.cancelled(),
+            coro_name,
+        )
+
+    # Cancel then await so each task can run its CancelledError cleanup. :contentReference[oaicite:2]{index=2}
+    for t in tasks:
+        t.cancel()
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for i, r in enumerate(results):
+        if isinstance(r, BaseException):
+            logger.warning("Shutdown debug: task[%d] ended with: %r", i, r)
 
 
 def parse_test_numbers(raw: Optional[str]) -> Optional[list[int]]:
@@ -572,7 +642,13 @@ async def async_main(test_numbers: Optional[list[int]] = None) -> int:
                     await delete_test_job_by_id(job_id)
             except Exception:
                 logger.exception("Cleanup failed while deleting test jobs.")
+
+        # --- Shutdown debug (threads + tasks) ---
+        await _cancel_and_await_pending_tasks(logger)
+        await _shutdown_default_executor(logger)
+        _log_active_threads(logger)
         logger.info("Shutdown complete.")
+
     ###########################################################################
     return 0  # (explicitly return exit code on normal completion)
 
@@ -581,6 +657,7 @@ def main():
     """
     Run async_main and exit the process with its exit code.
     """
+    exit_code = 0
     try:
         parser = build_arg_parser()
         args = parser.parse_args()
@@ -592,9 +669,11 @@ def main():
         exit_code = 1
 
     logger.info("All done - SystemExit.")
-    raise SystemExit(exit_code)
+    return exit_code
 
 
 if __name__ == "__main__":
-    main()
-logger.info("Done.")
+    exit_code = main()
+    logger.info("Done.")
+    logging.shutdown()
+    # raise SystemExit(exit_code)

@@ -42,4 +42,7 @@ asset-processing-service = "asset_processing_service.main:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-q"
+addopts = "-q --strict-markers"
+markers = [
+  "smoke: smoke tests (CLI/integration-style)"
+]

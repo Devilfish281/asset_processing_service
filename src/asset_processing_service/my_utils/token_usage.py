@@ -7,6 +7,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from asset_processing_service.my_utils.env_loader import load_dotenv_once
+
 
 class SingletonMeta(type):
     """
@@ -307,6 +309,11 @@ class TokenUsage(metaclass=SingletonMeta):
         """
         Load the tier and model from TOKEN_FILE and set TPM accordingly.
         """
+        try:  # added code
+            load_dotenv_once()  # added code
+        except Exception:  # added code
+            pass  # added code
+
         # Construct the path relative to the directory of token_usage.py
         config_path = Path(__file__).parent / self.TOKEN_FILE
 
