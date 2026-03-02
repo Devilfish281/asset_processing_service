@@ -316,7 +316,7 @@ async def worker_run(
                     )
                 finally:
                     # Remove the job from the set of pending or in progress jobs and release the lock
-                    jobs_pending_or_in_progress.remove(job.id)
+                    jobs_pending_or_in_progress.discard(job.id)
                     job_locks.pop(job.id, None)
 
             # Mark the job as done in the queue
@@ -444,6 +444,7 @@ def describe_test_menu() -> str:
         "  2 = max attempts job (failed, attempts=5)\n"
         "  3 = in_progress job (recent heartbeat)\n"
         "  4 = stuck job (old heartbeat)\n"
+        "  5 = get todo list job (created)\n"
     )
 
 
@@ -466,6 +467,7 @@ async def async_main(test_numbers: Optional[list[int]] = None) -> int:
 
         # Defaults (no tests selected)
         my_testing_normal_job_flag = False
+        my_testing_normal_get_job_flag = False
         my_testing_max_attempts_job_flag = False
         my_testing_in_progress_job_flag = False
         my_testing_stuck_job_flag = False
@@ -483,18 +485,32 @@ async def async_main(test_numbers: Optional[list[int]] = None) -> int:
             if test_numbers:
                 selected = set(test_numbers)
                 my_testing_normal_job_flag = 1 in selected
+                my_testing_normal_get_job_flag = 5 in selected
                 my_testing_max_attempts_job_flag = 2 in selected
                 my_testing_in_progress_job_flag = 3 in selected
                 my_testing_stuck_job_flag = 4 in selected
 
-            # wait drop_asset_processing_jobs_table()
+            # await drop_asset_processing_jobs_table()  # FIX THIS NOW - drop table to ensure clean slate for testing. In production, you would not do this.
             await ensure_postgres_tables()
 
             # You can remove this after confirming that jobs are being created and processed correctly
             await truncate_asset_processing_jobs_table()
             # testing normal job
             if my_testing_normal_job_flag:
-                inserted_id = await create_test_job()
+                inserted_id = await create_test_job(
+                    thread_id="test_thread_1",
+                    user_id="test_user_1",
+                    message="Add todo: Buy milk and eggs.",
+                )
+                test_job_ids.append(inserted_id)
+
+            # testing normal job Get todo
+            if my_testing_normal_get_job_flag:
+                inserted_id = await create_test_job(
+                    thread_id="test_thread_1",
+                    user_id="test_user_1",
+                    message="get my todo list.",
+                )
                 test_job_ids.append(inserted_id)
 
             # testing job with max attempts
@@ -572,7 +588,7 @@ async def async_main(test_numbers: Optional[list[int]] = None) -> int:
         # from asset_processing_service.life_goals_agent import get_builder_personal, get_builder_work
         builders = {
             "personal": get_builder_personal(),
-            "work": get_builder_work(),
+            # "work": get_builder_work(),
         }
 
         graphs = {

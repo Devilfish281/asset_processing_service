@@ -9,28 +9,68 @@
 
 # src/langgraph_projects/my_utils/configuration.py
 
-from dataclasses import dataclass
-from typing import Any, Optional
+from dataclasses import dataclass  # Changed Code
+from typing import Any, Literal, Mapping, NotRequired, TypedDict  # Changed Code
 
-from langchain_core.runnables.config import RunnableConfig
+from langchain_core.runnables.config import RunnableConfig  # (TypedDict-like)
+from pydantic import BaseModel, Field
+
+TodoKind = Literal["personal", "work"]
+
+
+class ConfigSchema(TypedDict, total=False):
+    """
+    Keys allowed under RunnableConfig["configurable"].
+
+    Use this as your LangGraph config_schema so Studio knows what fields exist.  # Added Code
+    """
+
+    thread_id: NotRequired[str]
+    user_id: NotRequired[str]
+    todo_kind: NotRequired[TodoKind]
+
+
+def _normalize_todo_kind(value: Any, default: TodoKind = "personal") -> TodoKind:
+    """Coerce todo_kind into the allowed literals ("personal" | "work")."""  # Added Code
+    if value in ("personal", "work"):
+        return value
+    return default
+
+
+def _get_configurable(
+    config: RunnableConfig | Mapping[str, Any] | None,
+) -> Mapping[str, Any]:
+    """
+    Safely extract the 'configurable' mapping from RunnableConfig or a plain dict.  # Added Code
+    """
+    if not config:
+        return {}
+    # RunnableConfig is TypedDict-like, but Studio may pass a plain dict.
+    try:
+        conf = config.get("configurable", {})  # type: ignore[union-attr]
+    except Exception:
+        conf = {}
+    return conf or {}
 
 
 @dataclass(frozen=True)
 class Configuration:
-    """Runtime configuration passed via RunnableConfig['configurable']."""
+    """Convenience wrapper for reading runtime config inside nodes."""
 
-    user_id: str
-    thread_id: Optional[str] = None
+    user_id: str = ""
+    thread_id: str = "1"
+    todo_kind: TodoKind = "personal"
 
     @classmethod
     def from_runnable_config(
-        cls, config: RunnableConfig | dict[str, Any]
+        cls, config: RunnableConfig | Mapping[str, Any] | None
     ) -> "Configuration":
-        # RunnableConfig is a TypedDict; Studio may pass a plain dict too.
-        cfg = config.get("configurable", {})  # works for both RunnableConfig and dict
+        cfg = _get_configurable(config)
+
         return cls(
             user_id=str(cfg.get("user_id", "")),
-            thread_id=(str(cfg["thread_id"]) if "thread_id" in cfg else None),
+            thread_id=str(cfg.get("thread_id", "1")),
+            todo_kind=_normalize_todo_kind(cfg.get("todo_kind", "personal")),
         )
 
 
@@ -41,4 +81,4 @@ import sys as _sys
 
 configuration = _sys.modules[__name__]
 
-__all__ = ["Configuration", "configuration"]
+__all__ = ["TodoKind", "ConfigSchema", "Configuration", "configuration"]

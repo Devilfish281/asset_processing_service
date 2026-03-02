@@ -18,10 +18,10 @@ from asset_processing_service.my_utils.llm_loader import get_llm_or_init
 from asset_processing_service.my_utils.logger_setup import setup_logger
 from asset_processing_service.my_utils.token_usage import TokenUsage
 
-try:  # added code
-    load_dotenv_once()  # added code
-except Exception:  # added code
-    pass  # added code
+try:
+    load_dotenv_once()
+except Exception:
+    pass
 
 # from dataclasses_json import config
 
@@ -170,14 +170,13 @@ class c_setup_config(BaseModel):
         description="Fallback Database URL if the primary DB_URL is not set or fails to connect.",
     )
 
-    # TESTING_FLAG
     testing_flag: bool = Field(
-        default=env_bool("TESTING_FLAG", False),
+        default_factory=lambda: c_setup_config.env_bool("TESTING_FLAG", False),
         description="Flag to indicate if the application is running in testing mode.",
     )
 
     testing_flag2: bool = Field(
-        default=env_bool("TESTING_FLAG2", False),
+        default_factory=lambda: c_setup_config.env_bool("TESTING_FLAG2", False),
         description="Flag to indicate if the application is running in testing mode level 2.",
     )
 

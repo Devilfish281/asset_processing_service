@@ -64,7 +64,6 @@ async def ensure_postgres_tables() -> None:
 
     conn: Optional[asyncpg.Connection] = None
     try:
-        # conn = await asyncpg.connect(db_url)
         conn = await connect_postgres_with_fallback(db_url)
         await conn.execute(
             """
@@ -72,6 +71,7 @@ async def ensure_postgres_tables() -> None:
               id TEXT PRIMARY KEY,
               thread_id TEXT NOT NULL,
               user_id TEXT NOT NULL,
+              todo_kind TEXT NOT NULL DEFAULT 'personal',  --  Added Code
               status TEXT NOT NULL DEFAULT 'created',
               attempts INTEGER NOT NULL DEFAULT 0,
               last_heartbeat TIMESTAMPTZ,
@@ -95,6 +95,11 @@ async def ensure_postgres_tables() -> None:
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_apj_status ON asset_processing_jobs (status);"
         )
+
+        # Optional, but usually useful if you filter jobs by kind. #  Added Code
+        await conn.execute(  #  Added Code
+            "CREATE INDEX IF NOT EXISTS idx_apj_todo_kind ON asset_processing_jobs (todo_kind);"  #  Added Code
+        )  #  Added Code
 
         logger.info("Postgres tables ensured (asset_processing_jobs).")
 
@@ -124,6 +129,7 @@ async def fetch_jobs() -> List[AssetProcessingJob]:
             thread_id,
             user_id,
             status,
+            todo_kind,
             attempts,
             last_heartbeat,
             error_message,
@@ -495,6 +501,7 @@ async def create_test_job(
     thread_id: str = "test_thread_1",
     user_id: str = "test_user_1",
     message: str = "hello from create_test_job()",
+    todo_kind: str = "personal",  #  Added Code
     status: str = "created",
     attempts: int = 0,
     last_heartbeat: Optional[datetime] = None,
@@ -530,6 +537,7 @@ async def create_test_job(
               id,
               thread_id,
               user_id,
+              todo_kind,
               status,
               attempts,
               last_heartbeat,
@@ -541,12 +549,13 @@ async def create_test_job(
               created_at,
               updated_at
             )
-            VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10,NOW(),NOW())
+            VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,$8,$9,$10,$11,NOW(),NOW())  --  Changed Code
             RETURNING id
             """,
             job_id,
             thread_id,
             user_id,
+            todo_kind,
             status,
             attempts,
             last_heartbeat,
@@ -661,6 +670,7 @@ async def fetch_job(job_id: str) -> Optional[AssetProcessingJob]:
             id,
             thread_id,
             user_id,
+            todo_kind,
             status,
             attempts,
             last_heartbeat,

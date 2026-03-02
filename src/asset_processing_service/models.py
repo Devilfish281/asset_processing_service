@@ -9,6 +9,7 @@ class AssetProcessingJob(BaseModel):
     id: str
     thread_id: str
     user_id: str
+    todo_kind: Literal["personal", "work"] = "personal"  #  Added Code
     status: Literal[
         "created", "in_progress", "completed", "failed", "max_attempts_exceeded"
     ]

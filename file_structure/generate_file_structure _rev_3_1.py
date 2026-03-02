@@ -45,6 +45,24 @@ def read_custom_header(script_dir):
 Developer: Developer: # Project Title
 - asset_processing_service1
 
+# About the Project
+- This project is an Asset Processing Service built with Python, utilizing LangChain and LangGraph for AI capabilities. It processes various types of assets (text, audio, video) and extracts content for use in a knowledge graph.
+- “job-driven ToDo/memory agent.”
+
+- This repo is a background worker service, not a user-facing app. Its active runtime in main.py polls Postgres for rows in asset_processing_jobs, pushes eligible jobs onto an asyncio queue, runs worker tasks, updates heartbeats, and handles stuck jobs / retry limits.
+
+-   The current job payload is basically a chat request: each job has thread_id, user_id, todo_kind, message, status fields, and room for the assistant’s last reply in the same table. That schema and the DB helpers live in api_client.py and models.py.
+
+-   What the workers actually do now is in job_processor.py: they invoke a LangGraph-based assistant against the job’s message, using thread_id, user_id,   and todo_kind as graph config, then write the final assistant message back onto the job row. The graph itself is defined in life_goals_agent.py. It is a memory-backed ToDo assistant that maintains:
+  -- a user profile
+  -- a ToDo collection
+  -- user instructions/preferences for how ToDos should be managed
+
+ -   Short-term graph checkpointing is stored in Redis via RedisSaver, and long-term memory is stored in Postgres via PostgresStore. OpenAI is the LLM   backend, initialized through setup_config.py and the utils under my_utils.
+
+
+
+
 # Role and Objective
 - Serve as a Python developer working on the 'Asset Processing Service' using modern Python tooling and best practices.
 - **Programming language:** Python (already installed).

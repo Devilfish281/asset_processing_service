@@ -83,7 +83,7 @@ async def process_job(job: AssetProcessingJob, graphs: dict) -> None:
     logger.info(f"Processing job {job.id}...")
 
     #############################################################
-    # TODO: Start heartbeat
+    # Start heartbeat
     heartbeat_task = asyncio.create_task(heartbeat_updater(job.id))
 
     try:
@@ -91,9 +91,10 @@ async def process_job(job: AssetProcessingJob, graphs: dict) -> None:
         # Update job status to "in_progress"
         await update_job_details(job.id, {"status": "in_progress"})
 
-        graph = graphs.get("personal")
+        graph_key = (job.todo_kind or "personal").strip()  #  Added Code
+        graph = graphs.get(graph_key)
         if graph is None:
-            raise ValueError("graphs['personal'] is missing")
+            raise ValueError(f"graphs['{graph_key}'] is missing")
 
         if job.message is None or not str(job.message).strip():
             raise ValueError("Job message is empty; nothing to run through the graph")
@@ -102,6 +103,7 @@ async def process_job(job: AssetProcessingJob, graphs: dict) -> None:
             "configurable": {
                 "thread_id": job.thread_id,
                 "user_id": job.user_id,
+                "todo_kind": graph_key,  #  "personal" or "work"
             }
         }
 
@@ -114,9 +116,10 @@ async def process_job(job: AssetProcessingJob, graphs: dict) -> None:
 
         log_trustcall_result(result, logger, label="Graph Invocation Result")
 
-        # TODO: update asset content
+        # update asset content
         # Extract last AI message safely
         ai_text = ""
+        last_msg = None
         try:
             last_msg = result["messages"][-1]
             ai_text = str(getattr(last_msg, "content", ""))
@@ -152,7 +155,9 @@ async def process_job(job: AssetProcessingJob, graphs: dict) -> None:
         What would you like to do?
         """
 
-        last_msg_type = getattr(last_msg, "type", None)
+        last_msg_type = (
+            getattr(last_msg, "type", None) if last_msg is not None else None
+        )  # Changed Code
 
         # Update job status to completed
         await update_job_details(
